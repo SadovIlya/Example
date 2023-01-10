@@ -1,0 +1,40 @@
+- name: "Install jenkins-slave on remote hosts using default 'Username with password' credentials"
+  hosts: "*"
+  gather_facts: no
+
+  tasks:
+    - name: Install IIS
+      win_feature:
+        name: "Web-Server"
+        state: present
+        restart: yes
+        include_sub_features: yes
+        include_management_tools: yes
+      register: win_feature
+    - name: Install URL rewrite module
+      win_package:
+        path: https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_en-US.msi  
+        product_id: '{9BCA2118-F753-4A1E-BCF3-5A820729965C}'
+        state: present
+    - name: Install WebFarm module
+      win_package:
+        path: https://download.microsoft.com/download/E/9/8/E9849D6A-020E-47E4-9FD0-A023E99B54EB/requestRouter_amd64.msi
+        product_id: '{9BCA2118-F753-4A1E-BCF3-5A8207299651}'
+        state: present
+    - name: Install ASP.NET Core 6.0 Runtime (v6.0.6) - Windows Hosting Bundle
+      win_package:
+        path: https://download.visualstudio.microsoft.com/download/pr/0d000d1b-89a4-4593-9708-eb5177777c64/cfb3d74447ac78defb1b66fd9b3f38e0/dotnet-hosting-6.0.6-win.exe
+        product_id: '{BD6AD874-A72C-30F0-B9E6-DD2993FE945E}'
+        arguments: /install /passive /norestart
+    - name: Lets Encrypt
+      ansible.windows.win_powershell:
+        script: |
+          New-Item -Path "c:\inetpub" -Name "letsencrypt" -ItemType "directory"
+          Invoke-WebRequest -URI https://github.com/win-acme/win-acme/releases/download/v2.1.22.1267/win-acme.v2.1.22.1267.x64.trimmed.zip -outfile c:\inetpub\letsencrypt\win-acme.zip
+          Expand-Archive c:\inetpub\letsencrypt\win-acme.zip -DestinationPath c:\inetpub\letsencrypt\
+          Remove-Item c:\inetpub\letsencrypt\win-acme.zip    
+    - name: aspnet_state
+      ansible.windows.win_service:
+        name: aspnet_state
+        start_mode: auto
+        state: started

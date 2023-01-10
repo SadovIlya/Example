@@ -1,0 +1,284 @@
+- name: "Provisioning IIS Server"
+  hosts: "*"
+  gather_facts: no
+  
+  tasks:
+  - name: Lets Encrypt create
+    ansible.windows.win_powershell:
+          script: |
+            c:\inetpub\letsencrypt\wacs.exe --source manual --host {{ item.name }} --webroot {{ item.directory }}{{ item.name }}{{ item.folder }} --emailaddress ilia.sadov@fsight.ru --accepttos
+    loop: "{{ sites }}"
+
+  - name: Lets Encrypt show
+    ansible.windows.win_powershell:
+          script: |
+            Get-ChildItem -Path Cert:\LocalMachine\WebHosting\ | Where-Object {$_.Subject -like "CN={{ item.name }}"} |  Select-Object Thumbprint
+    loop: "{{ sites }}"    
+    register: output
+
+  - name: Create sites directory structure blue
+    ansible.windows.win_file:
+      path: '{{ item.directory }}{{ item.name }}-blue{{ item.folder }}'
+      state: directory
+    loop: "{{ sites }}"
+
+  - name: Create sites directory structure green
+    ansible.windows.win_file:
+      path: '{{ item.directory }}{{ item.name }}-green{{ item.folder }}'
+      state: directory
+    loop: "{{ sites }}"
+
+  - name: Create sites directory structure
+    ansible.windows.win_file:
+      path: '{{ item.directory }}{{ item.name }}-content{{ item.folder }}'
+      state: directory
+    loop: "{{ content }}"
+
+  - name: hosts
+    ansible.windows.win_powershell:
+      script: |  
+        Add-Content -Path $env:windir\System32\drivers\etc\hosts -Value "`n127.0.0.1`t{{ item.name }}-blue" -Force
+    loop: "{{ sites }}"
+
+  - name: hosts
+    ansible.windows.win_powershell:
+      script: |  
+        Add-Content -Path $env:windir\System32\drivers\etc\hosts -Value "`n127.0.0.1`t{{ item.name }}-green" -Force
+    loop: "{{ sites }}"
+
+  - name: Create a new application pool
+    community.windows.win_iis_webapppool:
+      name: "{{ item.name }}-blue"
+      state: started
+      attributes:
+        enable32BitAppOnWin64: True
+    loop: "{{ sites }}"
+
+  - name: Create a new application pool
+    community.windows.win_iis_webapppool:
+      name: "{{ item.name }}-green"
+      state: started
+      attributes:
+        enable32BitAppOnWin64: True
+    loop: "{{ sites }}"
+
+  - name: IIS site blue
+    community.windows.win_iis_website:
+      name: "{{ item.name }}-blue"
+      state: started
+      port: "{{ item.httpblue }}"
+      ip: "*"
+      hostname: ""
+      application_pool: "{{ item.name }}-blue"
+      physical_path: '{{ item.directory }}{{ item.name }}-blue{{ item.folder }}'
+    register: website
+    loop: "{{ sites }}"
+
+  - name: IIS site green
+    community.windows.win_iis_website:
+      name: "{{ item.name }}-green"
+      state: started
+      port: "{{ item.httpgreen }}"
+      ip: "*"
+      hostname: ""
+      application_pool: "{{ item.name }}-green"
+      physical_path: '{{ item.directory }}{{ item.name }}-green{{ item.folder }}'
+    register: website
+    loop: "{{ sites }}"
+
+  - name: IIS site content
+    community.windows.win_iis_website:
+      name: "{{ item.name }}-blue"
+      state: started      
+      physical_path: '{{ item.directory }}{{ item.name }}-content{{ item.folder }}'
+    register: website
+    loop: "{{ content }}"
+
+  - name: IIS site content
+    community.windows.win_iis_website:
+      name: "{{ item.name }}-green"
+      state: started      
+      physical_path: '{{ item.directory }}{{ item.name }}-content{{ item.folder }}'
+    register: website
+    loop: "{{ content }}"
+
+  - name: Add a HTTP binding 1
+    community.windows.win_iis_webbinding:
+      name: "{{ item.name }}-blue"
+      protocol: http
+      port: "{{ item.httpblue }}"
+      ip: "*"      
+      state: present
+    loop: "{{ sites }}"
+
+  - name: Add a HTTP binding 2
+    community.windows.win_iis_webbinding:
+      name: "{{ item.name }}-green"
+      protocol: http
+      port: "{{ item.httpgreen }}"
+      ip: "*"      
+      state: present
+    loop: "{{ sites }}"
+
+  - name: Add a HTTPS binding 3
+    community.windows.win_iis_webbinding:
+      name: "{{ item.name }}-blue"
+      protocol: https
+      port: "{{ item.httpsblue }}"
+      ip: "*"
+      certificate_hash: '{{ output.results[item.cert].output[0].Thumbprint }}'
+      certificate_store_name: "WebHosting"
+      state: present
+    loop: "{{ sites }}"
+    tags:
+         - https
+
+  - name: Add a HTTPS binding 4
+    community.windows.win_iis_webbinding:
+      name: "{{ item.name }}-green"
+      protocol: https
+      port: "{{ item.httpsgreen }}"
+      ip: "*"
+      certificate_hash: '{{ output.results[item.cert].output[0].Thumbprint }}'
+      certificate_store_name: "WebHosting"
+      state: present
+    loop: "{{ sites }}"
+
+  - name: Add a HTTPS binding default
+    community.windows.win_iis_webbinding:
+      name: Default Web Site
+      protocol: https
+      port: 443
+      ip: "*"
+      host_header: "{{ item.name }}"
+      certificate_hash: '{{ output.results[item.cert].output[0].Thumbprint }}'
+      certificate_store_name: "WebHosting"
+      state: present      
+      ssl_flags: 1
+    loop: "{{ sites }}"      
+
+  - name: Add a HTTPS binding default
+    community.windows.win_iis_webbinding:
+      name: Default Web Site
+      protocol: http
+      port: 80
+      ip: "*"
+      host_header: "{{ item.name}}"      
+      state: present
+    loop: "{{ sites }}"
+
+  - name: webapp blue
+    community.windows.win_iis_webapplication:
+      name: app
+      site: '{{ item.name }}-blue'
+      state: present
+      physical_path: '{{ item.directory }}{{ item.name }}-blue{{ item.folder }}'
+    loop: "{{ content }}" 
+
+  - name: webapp green
+    community.windows.win_iis_webapplication:
+      name: app
+      site: '{{ item.name }}-green'
+      state: present
+      physical_path: '{{ item.directory }}{{ item.name }}-green{{ item.folder }}'
+    loop: "{{ content }}"  
+
+  - name: Create new server webFarms
+    ansible.windows.win_powershell:
+          script: |
+            $farmName = "{{ item.name }}"
+
+            Add-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' `
+            -Filter 'webFarms' `
+            -Name '.'  `
+            -Value @{ name = $farmName; enabled = $true }
+
+            Add-WebConfiguration -PSPath 'MACHINE/WEBROOT/APPHOST' `
+                -Filter "webFarms/webFarm[@name='$farmName']" `
+                -Value @(
+                    @{ address = '{{ item.name }}-blue'; enabled = $true},
+                    @{ address = '{{ item.name }}-green'; enabled = $false }
+                )
+
+            Set-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' `
+                -Filter "webFarms/webFarm[@name='$farmName']/server[@address='{{ item.name }}-blue']" `
+                -Name 'applicationRequestRouting' `
+                -Value @{ httpPort = {{ item.httpblue }}; httpsPort = {{ item.httpsblue }}  }          
+
+
+            Set-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' `
+                -Filter "webFarms/webFarm[@name='$farmName']/server[@address='{{ item.name }}-green']" `
+                -Name 'applicationRequestRouting' `
+                -Value @{ httpPort = {{ item.httpgreen }}; httpsPort = {{ item.httpsgreen }}  }
+
+    loop: "{{ sites }}" 
+
+  - name: Create new rewrite rules
+    ansible.windows.win_powershell:
+          script: |
+            Add-WebConfigurationProperty -filter "system.webServer/rewrite/globalRules" -name "." -value @{name='redirect-to-https-all' + $_ ;patternSyntax='Regular Expressions';stopProcessing='True'}
+            $filterRoot = "system.webServer/rewrite/globalRules/rule[@name='redirect-to-https-all$_']"
+            Set-WebConfigurationProperty -filter "$filterRoot/match" -name "url" -value "(.*)"
+            Set-WebConfigurationProperty -filter "$filterRoot/conditions" -name "logicalGrouping" -value "MatchAll"
+            Set-WebConfigurationProperty -filter "$filterRoot/action" -name "type" -value "Redirect"
+            Set-WebConfigurationProperty -filter "$filterRoot/action" -name "url" -value "https://{HTTP_HOST}/{R:1}"
+            
+            Add-WebConfigurationProperty -filter "system.webServer/rewrite/globalRules" -name "." -value @{name='{{ item.name}}' + $_ ;patternSyntax='Regular Expressions';stopProcessing='True'}
+            $filterRoot = "system.webServer/rewrite/globalRules/rule[@name='{{ item.name }}$_']"
+            Set-WebConfigurationProperty -filter "$filterRoot/match" -name "url" -value ".*"
+            Set-WebConfigurationProperty -filter "$filterRoot/conditions" -name "logicalGrouping" -value "MatchAll"
+            Set-WebConfigurationProperty -filter "$filterRoot/action" -name "type" -value "Rewrite"
+            Set-WebConfigurationProperty -filter "$filterRoot/action" -name "url" -value "https://{{ item.name }}/{R:0}"                        
+    loop: "{{ sites }}"
+    tags:
+      - redirect
+  - name: Add conditions
+    ansible.windows.win_powershell:
+          script: |
+            $list = @{ 
+            filter = "/system.webServer/rewrite/globalRules/rule[@name='{{ item.name }}']/conditions"
+            Value = @{
+                input = '{HTTP_HOST}'
+                matchType ='0'
+                pattern ='^{{ item.name }}'
+                ignoreCase ='True'
+                negate ='False'
+            }
+            }
+            Add-WebConfiguration @list
+
+            $list = @{ 
+            filter = "/system.webServer/rewrite/globalRules/rule[@name='{{ item.name }}']/conditions"
+            Value = @{
+                input = '{SERVER_PORT}'
+                matchType ='0'
+                pattern ='443'
+                ignoreCase ='True'
+                negate ='False'
+            }
+            }
+            Add-WebConfiguration @list
+
+            $list = @{ 
+            filter = "/system.webServer/rewrite/globalRules/rule[@name='redirect-to-https-all']/conditions"
+            Value = @{
+                input = '{HTTPS}'
+                matchType ='0'
+                pattern ='^OFF$'
+                ignoreCase ='True'
+                negate ='False'
+            }
+            }
+            Add-WebConfiguration @list
+    tags:
+      - redirect
+    loop: "{{ sites }}"
+
+  - name: Create a new service with extra details
+    ansible.windows.win_service:
+      name: '{{ item.name}}'
+      path: '{{ item.path }}'
+      start_mode: auto
+      display_name: '{{ item.name}}'
+      description: '{{ item.description}} created by ansible'
+    loop: "{{ services }}"
