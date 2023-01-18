@@ -1,0 +1,23 @@
+- name: ansible
+  hosts: all
+  become: true
+  tasks:
+
+    - name: Install docker
+      ansible.builtin.include_tasks: 
+        file: install-docker.yml
+
+    - name: Create folders
+      ansible.builtin.include_tasks: 
+        file: create-folders.yml
+
+    - name: Create files
+      ansible.builtin.include_tasks: 
+        file: create-files.yml
+
+    - name: docker compose
+      docker_compose:
+        project_src: /opt/dockercompose
+        state: present
+        restarted: true
+      tags: dockercompose

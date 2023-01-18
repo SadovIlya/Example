@@ -1,0 +1,17 @@
+global:
+  scrape_interval: "15s"
+  evaluation_interval: "15s"
+  scrape_timeout: "10s"
+alerting:
+  alertmanagers:
+  - scheme: http
+    static_configs:
+    - targets:
+      - "alertmanager:9093"
+rule_files:
+ - 'rules.yaml'
+scrape_configs:
+##########node-exporter##########
+  - job_name: 'prometheus'
+    static_configs:
+    - targets: ['localhost:9090']

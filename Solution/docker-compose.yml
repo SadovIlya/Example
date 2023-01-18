@@ -1,0 +1,29 @@
+version: '3.3'
+
+services:
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus:/etc/prometheus/
+    container_name: prometheus
+    hostname: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - '--storage.tsdb.retention=100h'
+    ports:
+      - 9090:9090
+    restart: always
+    environment:
+      TZ: "Europe/Moscow"
+    networks:
+      - default
+
+  postgres:
+    image: postgres:13.3
+    environment:
+      POSTGRES_DB: "db"
+      POSTGRES_USER: "pguser"
+      POSTGRES_PASSWORD: "pgpass"
+    ports:
+      - "5432:5432"

@@ -1,0 +1,16 @@
+---
+- name: Copy file docker-compose.yml
+  ansible.builtin.copy:
+    src: ../docker-compose.yml
+    dest: /opt/dockercompose/docker-compose.yml
+    owner: admin
+    group: admin
+    mode: "755"
+
+- name: Copy file prometheus
+  ansible.builtin.copy:
+    src: ../prometheus/prometheus.yml
+    dest: /opt/dockercompose/prometheus/prometheus.yml
+    owner: admin
+    group: admin
+    mode: "755"

@@ -1,0 +1,16 @@
+---
+- name: Create a main dockercompose directory if it does not exist
+  ansible.builtin.file:
+    path: /opt/dockercompose
+    state: directory
+    owner: admin
+    group: admin
+    mode: '755'
+
+- name: Create a main prometheus directory
+  ansible.builtin.file:
+    path: /opt/dockercompose/prometheus
+    state: directory
+    owner: admin
+    group: admin
+    mode: '755'
